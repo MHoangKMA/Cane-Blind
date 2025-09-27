@@ -1,7 +1,7 @@
 #include "GPS_Feature.h"
 
 /* Global system timestamp (milliseconds) */
-unsigned long systemCurrentTimeMs;
+unsigned long systemCurrentTimeMs =0U;
 
 /* Variable to store the final generated Google Maps URL */
 String googleMapUrl = "";
