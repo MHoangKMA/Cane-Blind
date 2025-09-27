@@ -1,57 +1,9 @@
 #include "GPS_Feature.h"
 
-/* Global system timestamp (milliseconds) */
-unsigned long systemCurrentTimeMs =0U;
-
 /* Variable to store the final generated Google Maps URL */
 String googleMapUrl = "";
 
-/* Externally defined HardwareSerial instance for GSM/GNSS communication */
-extern HardwareSerial gsmSerialPort;
 
-/****************************************************************************************
- *  Function Name    : sendData
- *  Description      : Sends an AT command over GSM serial port and collects the response.
- *                     The function waits until the specified timeout expires or until no more
- *                     data is available in the serial buffer. Optionally, the received response
- *                     can be printed to the debug serial port.
- *
- *  Input Parameters :
- *    atCommand       - (String) The AT command to be sent to the module.
- *    timeoutMs       - (const int) The maximum waiting time in milliseconds for the response.
- *    enableDebug     - (boolean) If true, the response will be printed to Serial monitor.
- *
- *  Return Value     :
- *    (String) The accumulated response received from the module within the timeout period.
- ****************************************************************************************/
-String sendData(String atCommand, const int timeoutMs, boolean enableDebug)
-{
-    String responseBuffer = "";
-
-    /* Send AT command to GSM/GNSS module */
-    gsmSerialPort.println(atCommand);
-
-    /* Record the start time for timeout calculation */
-    unsigned long startTimeMs = millis();
-
-    /* Collect response until timeout expires */
-    while ((startTimeMs + timeoutMs) > millis())
-    {
-        while (gsmSerialPort.available() > 0)
-        {
-            char receivedChar = gsmSerialPort.read();
-            responseBuffer += receivedChar;
-        }
-    }
-
-    /* Optionally print the response for debugging */
-    if (enableDebug)
-    {
-        Serial.print(responseBuffer);
-    }
-
-    return responseBuffer;
-}
 
 /****************************************************************************************
  *  Function Name    : parseGpsToMapLink
@@ -176,4 +128,55 @@ String parseGpsToMapLink(String gpsResponseRaw, boolean enableDebugPrint)
 
     /* Return the generated Google Maps link */
     return googleMapUrl;
+}
+
+/****************************************************************************************
+ *  Function Name    : requestGpsLocation
+ *  Description      : Handles periodic retrieval of GNSS (GPS) location information from 
+ *                     the GSM/GNSS module and forwards serial data for debugging. 
+ *                     The function performs three main tasks:
+ *                       1. Checks if the configured interval has elapsed since the last 
+ *                          GPS request. If yes, it sends the "AT+CGNSSINFO" command to 
+ *                          the module and parses the response into a Google Maps link.
+ *                       2. Forwards any user-entered AT commands from the USB Serial 
+ *                          monitor to the GSM serial port (transparent passthrough).
+ *                       3. Forwards any responses or notifications from the GSM serial 
+ *                          port back to the USB Serial monitor for debugging and testing.
+ *
+ *  Input Parameters :
+ *    - systemCurrentTimeMs : (Reference) Stores the last GPS request timestamp in 
+ *                            milliseconds. Updated internally when a new request is sent.
+ *    - intervalMs          : Interval time (in milliseconds) that must elapse before 
+ *                            sending the next GPS request.
+ *    - debug               : Boolean flag; when true, both the raw GPS response and the 
+ *                            parsed map link are printed to the Serial Monitor for analysis.
+ *
+ *  Return Value     :
+ *    None
+ *
+ ****************************************************************************************/
+void requestGpsLocation(unsigned long &systemCurrentTimeMs, unsigned long intervalMs, bool debug) {
+  /* Check if the interval has passed since last request */
+  if ((millis() - systemCurrentTimeMs) > intervalMs) {
+    /* Update the system timestamp */
+    systemCurrentTimeMs = millis();
+
+    /* Send AT command to get GNSS (GPS) information */
+    String gpsResponse = sendData("AT+CGNSSINFO", 1000, debug);
+
+    /* Parse the GPS response into a map link (custom function) */
+    parseGpsToMapLink(gpsResponse, debug);
+  }
+
+  /* Forward data from debug Serial (USB) to GSM serial port */
+  while (Serial.available() > 0) {
+    gsmSerialPort.write(Serial.read());
+    yield(); /* Allow background tasks to run */
+  }
+
+  /* Forward data from GSM serial port to debug Serial (USB) */
+  while (gsmSerialPort.available() > 0) {
+    Serial.write(gsmSerialPort.read());
+    yield(); /* Allow background tasks to run */
+  }
 }
